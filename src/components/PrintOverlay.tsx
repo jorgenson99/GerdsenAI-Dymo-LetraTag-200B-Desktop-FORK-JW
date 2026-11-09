@@ -22,7 +22,9 @@ export function PrintOverlay() {
   const running = pr.stage !== "result";
   const res = pr.stage === "result" ? pr.result : null;
 
-  const stageText = pr.stage === "rasterizing" ? "Rasterizing label…" : "Sending to LetraTag";
+  const stageText =
+    (pr.batch ? "Label " + pr.batch.i + " of " + pr.batch.n + " · " : "") +
+    (pr.stage === "rasterizing" ? "Rasterizing label…" : "Sending to LetraTag");
   const subText =
     pr.stage === "rasterizing"
       ? "1-bit · " + bitmap.w + "×30 px · stretch ×" + state.stretch

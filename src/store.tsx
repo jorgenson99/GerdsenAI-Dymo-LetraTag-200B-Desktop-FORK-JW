@@ -15,7 +15,37 @@ import {
 } from "react";
 import * as backend from "./backend";
 import { buildBitmap, buildPrintBitmap, bitmapToPngBase64 } from "./raster";
-import type { Bitmap, LabelState, PrintResult, Snapshot } from "./types";
+import type { BatchItem, Bitmap, LabelSet, LabelState, PrintResult, Snapshot } from "./types";
+
+/** Parses a batch: one label per line, "TEXT<tab or , or ;>BARCODE"; a single field is the barcode. */
+export function parseBatch(src: string): BatchItem[] {
+  return (src || "")
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => {
+      const f = l.split(/\t|;|,/).map((x) => x.trim()).filter(Boolean);
+      return f.length >= 2 ? { text: f[0], code: f[1] } : { text: "", code: f[0] };
+    })
+    .filter((it) => it.code);
+}
+
+function loadLocal<T>(key: string, fallback: T): T {
+  try {
+    const v = localStorage.getItem(key);
+    return v ? (JSON.parse(v) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function saveLocal(key: string, v: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(v));
+  } catch {
+    /* storage full or blocked: keep working without it */
+  }
+}
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function isEmpty(s: LabelState): boolean {
   if (s.mode === "barcode") return !(s.barcode || "").trim();
@@ -100,6 +130,8 @@ function initialState(): LabelState {
     barcodeText: "",
     barcodeCaption: false,
     barcodeBar: 2,
+    batchText: loadLocal<string>("jw_batch", ""),
+    sets: loadLocal<LabelSet[]>("jw_sets", []),
     icon: "",
     date: false,
     padding: 1,
@@ -126,6 +158,10 @@ export interface Store {
   setBarcodeText: (v: string) => void;
   toggleBarcodeCaption: () => void;
   setBarcodeBar: (v: number) => void;
+  setBatchText: (v: string) => void;
+  runBatch: () => Promise<void>;
+  saveSet: (name: string) => void;
+  deleteSet: (name: string) => void;
   setPadding: (v: number) => void;
   toggleTwo: () => void;
   setMode: (m: "text" | "barcode") => void;
@@ -231,6 +267,76 @@ export function LabelStudioProvider({ children }: { children: ReactNode }) {
     }
     void runPrint();
   }, [patch, runPrint]);
+
+  // ----- batch: print a list of labels one after another -----
+
+  const runBatch = useCallback(async () => {
+    const s0 = stateRef.current;
+    if (s0.print && s0.print.stage !== "result") return;
+    const items = parseBatch(s0.batchText);
+    if (!items.length) return;
+    if (s0.conn !== "on") {
+      patch({ screen: "connect", conn: s0.addr ? "found" : "idle", print: null });
+      return;
+    }
+    const n = items.length;
+    for (let i = 0; i < n; i++) {
+      const it = items[i];
+      const label = (it.text ? it.text + " · " : "") + it.code;
+      // Show this label in the editor and the overlay while it prints.
+      setState((st) => ({
+        ...st,
+        mode: "barcode",
+        barcode: it.code,
+        barcodeText: it.text,
+        print: { stage: "rasterizing", percent: 0, sent: 0, total: 0, result: null, batch: { i: i + 1, n, label } },
+      }));
+      try {
+        const s = { ...stateRef.current, mode: "barcode" as const, barcode: it.code, barcodeText: it.text };
+        const png = bitmapToPngBase64(buildPrintBitmap(s));
+        const reply = await backend.printLabel(png, s.stretch, s.addr || undefined);
+        const result = mapResult(reply.code);
+        if (!result.ok) {
+          setState((st) => ({
+            ...st,
+            print: { stage: "result", percent: 0, sent: 0, total: 0, batch: { i: i + 1, n, label }, result: { ...result, det: "Stopped at label " + (i + 1) + " of " + n + " (" + label + "). " + result.det } },
+          }));
+          return;
+        }
+      } catch (e) {
+        setState((st) => ({
+          ...st,
+          print: { stage: "result", percent: 0, sent: 0, total: 0, batch: { i: i + 1, n, label }, result: { ok: false, big: "Batch stopped", det: "Label " + (i + 1) + " of " + n + " (" + label + ") failed: " + String(e), icon: "triangle-alert" } },
+        }));
+        return;
+      }
+      if (i < n - 1) await sleep(700);
+    }
+    setState((st) => ({
+      ...st,
+      print: { stage: "result", percent: 100, sent: 0, total: 0, batch: { i: n, n, label: "" }, result: { ok: true, big: "Printed " + n + " labels", det: "Every label in the batch went to the LetraTag.", icon: "check" } },
+    }));
+  }, [patch]);
+
+  const setBatchText = useCallback((v: string) => {
+    saveLocal("jw_batch", v);
+    patch({ batchText: v });
+  }, [patch]);
+
+  const saveSet = useCallback((name: string) => {
+    const nm = name.trim();
+    const text = stateRef.current.batchText;
+    if (!nm || !parseBatch(text).length) return;
+    const sets = [{ name: nm, text }, ...stateRef.current.sets.filter((x) => x.name !== nm)];
+    saveLocal("jw_sets", sets);
+    patch({ sets });
+  }, [patch]);
+
+  const deleteSet = useCallback((name: string) => {
+    const sets = stateRef.current.sets.filter((x) => x.name !== name);
+    saveLocal("jw_sets", sets);
+    patch({ sets });
+  }, [patch]);
 
   const closePrint = useCallback(() => patch({ print: null }), [patch]);
 
@@ -346,6 +452,10 @@ export function LabelStudioProvider({ children }: { children: ReactNode }) {
     setBarcodeText: (v) => patch({ barcodeText: v, print: null }),
     toggleBarcodeCaption: () => patch({ barcodeCaption: !stateRef.current.barcodeCaption, print: null }),
     setBarcodeBar: (v) => patch({ barcodeBar: v, print: null }),
+    setBatchText,
+    runBatch,
+    saveSet,
+    deleteSet,
     setPadding: (v) => patch({ padding: v }),
     toggleTwo: () => patch({ twoLines: !stateRef.current.twoLines }),
     setMode: (m) => patch({ mode: m, print: null }),

@@ -24,6 +24,18 @@ export interface PrintState {
   sent: number;
   total: number;
   result: PrintResult | null;
+  /** Set while a batch prints: label i of n. */
+  batch?: { i: number; n: number; label: string };
+}
+
+/** One label of a batch: optional big text + barcode data. */
+export interface BatchItem {
+  text: string;
+  code: string;
+}
+export interface LabelSet {
+  name: string;
+  text: string;
 }
 
 /** The subset of state captured by a template or a Recent-history chip. */
@@ -82,6 +94,9 @@ export interface LabelState {
   icon: string;
   date: boolean;
   padding: number;
+  // batch printing: one label per line, plus named sets kept on this PC
+  batchText: string;
+  sets: LabelSet[];
   // transient
   print: PrintState | null;
   history: HistoryItem[];

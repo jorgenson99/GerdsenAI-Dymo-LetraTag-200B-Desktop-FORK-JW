@@ -3,7 +3,8 @@
 
 import { accent, FONTS, FONT_ORDER, ICONS, TAPE_ORDER, TAPES, TEMPLATES } from "../data";
 import { Icon } from "../icons";
-import { useStore } from "../store";
+import { parseBatch, useStore } from "../store";
+import { useState } from "react";
 import { css, SEC_LABEL, seg } from "../ui";
 
 export function Sidebar() {
@@ -61,19 +62,26 @@ export function Sidebar() {
                 style={css("width:100%;padding:10px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.1);background:#161619;color:#f2f2f4;font-size:13px;font-weight:700;")}
               />
               <div style={css("display:flex;gap:7px;align-items:center;")}>
-                <span style={css("font-size:11px;color:#8a8a94;")}>Bars</span>
-                <div style={css("display:flex;gap:4px;padding:3px;background:rgba(255,255,255,.04);border-radius:9px;border:1px solid rgba(255,255,255,.07);")}>
+                <span style={css("font-size:11px;color:#8a8a94;width:34px;")}>Bars</span>
+                <div style={css("display:flex;gap:4px;padding:3px;background:rgba(255,255,255,.04);border-radius:9px;border:1px solid rgba(255,255,255,.07);flex:1;")}>
                   {[1, 2, 3].map((b) => (
-                    <button key={b} onClick={() => s.setBarcodeBar(b)} style={css(seg((state.barcodeBar || 2) === b))}>
+                    <button key={b} onClick={() => s.setBarcodeBar(b)} style={css(seg((state.barcodeBar || 2) === b) + ";flex:1;text-align:center;")}>
                       {b === 1 ? "Thin" : b === 2 ? "Wide" : "XL"}
                     </button>
                   ))}
                 </div>
-                <button onClick={s.toggleBarcodeCaption} style={css(seg(!!state.barcodeCaption) + ";flex:1;")}>Small text</button>
+              </div>
+              <div style={css("display:flex;gap:7px;align-items:center;")}>
+                <span style={css("font-size:11px;color:#8a8a94;width:34px;")}>Under</span>
+                <button onClick={s.toggleBarcodeCaption} style={css(seg(!!state.barcodeCaption) + ";flex:1;text-align:center;")}>
+                  {state.barcodeCaption ? "Small text under bars: on" : "Small text under bars: off"}
+                </button>
               </div>
             </div>
           )}
         </div>
+
+        {!isText && <BatchPanel />}
 
         {isText && (
           <>
@@ -180,6 +188,58 @@ export function Sidebar() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Batch: paste a list (one label per line: TEXT, BARCODE), print them all in one go,
+// and keep named sets on this PC.
+function BatchPanel() {
+  const s = useStore();
+  const { state } = s;
+  const ac = accent();
+  const [name, setName] = useState("");
+  const items = parseBatch(state.batchText || "");
+  const box = "width:100%;padding:9px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.1);background:#161619;color:#f2f2f4;";
+  return (
+    <div>
+      <div style={css(SEC_LABEL)}>Batch</div>
+      <div style={css("font-size:11px;color:#8a8a94;margin-bottom:6px;line-height:1.4;")}>One label per line: <b style={css("color:#cfcfd6;")}>TEXT, BARCODE</b> (tab, comma or ;). Uses the bar settings above.</div>
+      <textarea
+        value={state.batchText || ""}
+        onChange={(e) => s.setBatchText(e.target.value)}
+        placeholder={"3A, LOC-61\n3B, LOC-60\n3C, LOC-59"}
+        rows={6}
+        style={css(box + "font-size:12px;font-family:ui-monospace,Menlo,monospace;resize:vertical;min-height:90px;")}
+      />
+      <button
+        onClick={() => void s.runBatch()}
+        disabled={!items.length}
+        style={css("width:100%;margin-top:8px;padding:11px;border-radius:10px;border:none;font-size:13px;font-weight:700;cursor:pointer;" + (items.length ? "background:" + ac.grad + ";color:#0a0a0a;" : "background:rgba(255,255,255,.06);color:#6a6a72;cursor:default;"))}
+      >
+        {items.length ? "Print all " + items.length + " labels" : "Paste labels to print"}
+      </button>
+      <div style={css("display:flex;gap:6px;margin-top:10px;")}>
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Set name, e.g. Cabinet 3" style={css(box + "font-size:12px;flex:1;min-width:0;")} />
+        <button
+          onClick={() => { s.saveSet(name); setName(""); }}
+          style={css(seg(false) + ";white-space:nowrap;")}
+        >
+          Save set
+        </button>
+      </div>
+      {state.sets?.length ? (
+        <div style={css("display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;")}>
+          {state.sets.map((st) => (
+            <span key={st.name} style={css("display:inline-flex;align-items:center;border-radius:8px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);overflow:hidden;")}>
+              <button onClick={() => s.setBatchText(st.text)} style={css("padding:6px 9px;background:none;border:none;color:#e6e6ea;font-size:12px;font-weight:600;cursor:pointer;")}>
+                {st.name} <span style={css("color:#8a8a94;")}>· {parseBatch(st.text).length}</span>
+              </button>
+              <button onClick={() => s.deleteSet(st.name)} aria-label={"Delete set " + st.name} style={css("padding:6px 8px;background:none;border:none;border-left:1px solid rgba(255,255,255,.08);color:#8a8a94;cursor:pointer;")}>×</button>
+            </span>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
