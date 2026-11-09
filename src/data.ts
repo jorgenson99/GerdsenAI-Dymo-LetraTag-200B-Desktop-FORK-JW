@@ -73,4 +73,5 @@ export const TEMPLATES: Template[] = [
   { name: "Opened on", lucide: "calendar", s: { line1: "OPENED", line2: "", twoLines: false, font: "M", bold: true, align: "center", mode: "text", invert: false, icon: "", date: true } },
   { name: "Address", lucide: "mail", s: { line1: "A. GERDSEN", line2: "1 Neural Way", twoLines: true, font: "S", bold: false, align: "left", mode: "text", invert: false, icon: "", date: false } },
   { name: "Barcode", lucide: "barcode", s: { mode: "barcode", barcode: "GERDSEN-200B" } },
+  { name: "Shelf label", lucide: "barcode", s: { mode: "barcode", barcode: "LOC-60", barcodeText: "3B", barcodeCaption: false, barcodeBar: 2 } },
 ];
