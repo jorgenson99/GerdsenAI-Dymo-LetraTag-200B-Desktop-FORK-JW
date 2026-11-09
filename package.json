@@ -1,7 +1,7 @@
 {
   "name": "label-studio",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Free, open-source desktop app to design and print labels on the DYMO LetraTag 200B (LT-200B) over Bluetooth from Windows or macOS — no phone app required.",
   "keywords": [
     "dymo",
